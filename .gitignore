@@ -1,0 +1,16 @@
+﻿# Python
+backend/.venv/
+backend/**/__pycache__/
+backend/*.pyc
+
+# Piper voices (large)
+backend/piper_voices/
+
+# Node
+client/node_modules/
+client/dist/
+
+# Env / OS
+*.env
+.DS_Store
+Thumbs.db

@@ -1,0 +1,7 @@
+fastapi==0.115.*
+uvicorn[standard]==0.30.*
+faster-whisper==1.0.*
+soundfile
+numpy
+python-multipart
+requests
