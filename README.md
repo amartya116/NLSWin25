@@ -6,8 +6,3 @@ Frontend is plain HTML / CSS / JavaScript using browser microphone recording typ
 
 MUST 
   Install requirEments.txt
-  Install ffmpeg (System wide for some reason (not sure why))
-  Install Piper TTS:
-      Backend/models/piper/en_US-lessac-medium.onnx
-      Backend/models/piper/en_US-lessac-medium.onnx.json)
-
