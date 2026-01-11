@@ -5,7 +5,9 @@ import subprocess
 import tempfile
 import os
 from fastapi.middleware.cors import CORSMiddleware
+from litellm import llama_models
 
+from Backend.app.NLG import generate_nlg
 
 app = FastAPI()
 
@@ -59,9 +61,9 @@ async def speech_to_speech(audio: UploadFile = File(...)):
         wav_path = os.path.join(tmpdir, "input_16k.wav")
         out_wav = os.path.join(tmpdir, "output_tts.wav")
 
-        data = await audio.read()
+        data_bytes = await audio.read()
         with open(raw_path, "wb") as f:
-            f.write(data)
+            f.write(data_bytes)
 
         try:
             convert_to_wav16k_mono(raw_path, wav_path)
@@ -69,18 +71,56 @@ async def speech_to_speech(audio: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail=f"ffmpeg conversion failed: {e}")
 
         try:
-            # Perform ASR
             segments, _info = asr_model.transcribe(wav_path, language="en")
-            text = "".join(seg.text for seg in segments).strip()
-
+            transcript = "".join(seg.text for seg in segments).strip()
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"ASR failed: {e}")
 
-        if not text:
+        if not transcript:
             raise HTTPException(status_code=422, detail="Could not transcribe speech (empty result).")
 
+        # ---------------------------------------------------------
+        # NLG with json example from lecture (until we put the guys's code)
+        # ---------------------------------------------------------
+        WEATHER_API_RES = {
+            "place": "Marburg",
+            "forecast": [
+                {"day": "thursday", "temperature": {"min": 7, "max": 15}, "weather": "few clouds"},
+                {"day": "friday", "temperature": {"min": 6, "max": 14}, "weather": "rain"},
+                {"day": "saturday", "temperature": {"min": 5, "max": 11}, "weather": "clear sky"}
+            ]
+        }
+
+        nlg_input = {
+            "intent": "weather_forecast",
+            "entities": {
+                "place": WEATHER_API_RES["place"],
+                "day": WEATHER_API_RES["day"],
+            },
+            "tool_results": {
+                "weather_api": WEATHER_API_RES
+            },
+            "conversation_state": {
+                "locale": "en",
+                "timezone": "Europe/Berlin",
+                "pending_slots": []
+            }
+        }
+
+    #------------------------------------------------------------
+        # up up
+    #------------------------------------------------------------
+
         try:
-            run_piper_tts(text, out_wav)
+            nlg_result = await generate_nlg(nlg_input, model="llama3.2")
+            response_text = nlg_result.text
+        except Exception:
+            # extra safety: if anything weird happens, fallback to transcript
+            response_text = transcript
+
+        # TTS should speak the response, not the transcript
+        try:
+            run_piper_tts(response_text, out_wav)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
 
@@ -94,7 +134,8 @@ async def speech_to_speech(audio: UploadFile = File(...)):
             content=audio_bytes,
             media_type="audio/wav",
             headers={
-                "X-Transcript": text,
+                "X-Transcript": transcript,
+                "X-Assistant-Text": response_text,
                 "Content-Disposition": 'attachment; filename="speech_output.wav"',
             },
         )
