@@ -6,3 +6,13 @@ Frontend is plain HTML / CSS / JavaScript using browser microphone recording typ
 
 MUST 
   Install requirEments.txt
+
+## how to run 
+cd backend/app
+uvicorn main:app --reload
+
+## In another terminal
+cd frontend
+python -m http.server 5500
+
+## then launch localhost
