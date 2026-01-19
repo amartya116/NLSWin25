@@ -5,23 +5,19 @@ import subprocess
 import tempfile
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from litellm import llama_models
 
-from Backend.app.NLG import generate_nlg
+from app.NLG import generate_nlg
 
 app = FastAPI()
 
-
-#HTTP bullshit for ui
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
-    allow_credentials=True,
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Transcript"],  # so frontend can read it
+    expose_headers=["X-Transcript", "X-Assistant-Text"],
 )
-# --------------------------------------------------- 
 
 
 
