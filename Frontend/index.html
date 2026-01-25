@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Assistant</title>
+<style>
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.container {
+  width: 100%;
+  max-width: 600px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  border-radius: 32px;
+  padding: 48px 40px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+h1 {
+  color: white;
+  font-size: 42px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 18px;
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+.dots-container {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 50px;
+  height: 24px;
+  align-items: center;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.dot.on {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  transform: scale(1.3);
+}
+
+.status-text {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 20px;
+  text-align: center;
+  margin-bottom: 60px;
+  min-height: 28px;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+
+.mic-button {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 40px rgba(79, 172, 254, 0.4);
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.mic-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 16px 48px rgba(79, 172, 254, 0.5);
+}
+
+.mic-button:active {
+  transform: scale(0.98);
+}
+
+.mic-button.listening {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 12px 40px rgba(79, 172, 254, 0.4);
+  }
+  50% {
+    box-shadow: 0 12px 60px rgba(79, 172, 254, 0.8), 0 0 40px rgba(79, 172, 254, 0.6);
+  }
+}
+
+.mic-icon {
+  width: 50px;
+  height: 50px;
+  fill: white;
+}
+
+.speaker-button {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.speaker-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.speaker-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.speaker-icon {
+  width: 40px;
+  height: 40px;
+  fill: white;
+}
+
+.chat-box {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 20px;
+  padding: 24px;
+  margin-top: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-text {
+  color: white;
+  font-size: 16px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.hidden-audio {
+  display: none;
+}
+
+.backend-input {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.backend-input input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 14px;
+  text-align: center;
+}
+
+.backend-input input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Audio Assistant</h1>
+  <p class="subtitle">Voice-powered conversation</p>
+  
+  <div class="dots-container" id="dots"></div>
+  
+  <div class="status-text" id="hint">Ready to listen</div>
+  
+  <div class="controls">
+    <button class="mic-button" id="btnMic">
+      <svg class="mic-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+    </button>
+    
+    <button class="speaker-button" id="btnSpeaker" disabled>
+      <svg class="speaker-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+      </svg>
+    </button>
+  </div>
+  
+  <div class="chat-box">
+    <p class="chat-text" id="chatText">Hi! I'm your audio assistant. Press the microphone to start talking.</p>
+  </div>
+  
+  <div class="backend-input">
+    <input type="text" id="backendUrl" value="http://127.0.0.1:8000/speech2speech" placeholder="Backend URL">
+  </div>
+  
+  <audio id="audioIn" class="hidden-audio"></audio>
+  <audio id="audioOut" class="hidden-audio"></audio>
+  
+  <span id="status" style="display:none;"></span>
+</div>
+
+<script>
+const btnMic = document.getElementById("btnMic");
+const btnSpeaker = document.getElementById("btnSpeaker");
+const statusEl = document.getElementById("status");
+const hintEl = document.getElementById("hint");
+const chatText = document.getElementById("chatText");
+const audioIn = document.getElementById("audioIn");
+const audioOut = document.getElementById("audioOut");
+const backendUrlInput = document.getElementById("backendUrl");
+const dotsEl = document.getElementById("dots");
+
+let mediaRecorder = null;
+let chunks = [];
+let stream = null;
+let isRecording = false;
+
+let dotTimer = null;
+let dotIndex = 0;
+const DOT_COUNT = 28;
+
+function setStatus(msg) {
+  statusEl.textContent = msg;
+}
+
+function setChat(msg) {
+  chatText.textContent = msg;
+}
+
+function buildDots() {
+  dotsEl.innerHTML = "";
+  for (let i = 0; i < DOT_COUNT; i++) {
+    const s = document.createElement("span");
+    s.className = "dot";
+    dotsEl.appendChild(s);
+  }
+}
+buildDots();
+
+function setDotsActive(active) {
+  const dots = dotsEl.querySelectorAll(".dot");
+  dots.forEach(d => d.classList.remove("on"));
+  if (!active) return;
+
+  const windowSize = 5;
+  for (let k = 0; k < windowSize; k++) {
+    const idx = (dotIndex + k) % dots.length;
+    dots[idx].classList.add("on");
+  }
+}
+
+function startDots() {
+  stopDots();
+  dotIndex = 0;
+  setDotsActive(true);
+  dotTimer = setInterval(() => {
+    dotIndex = (dotIndex + 1) % DOT_COUNT;
+    setDotsActive(true);
+  }, 110);
+}
+
+function stopDots() {
+  if (dotTimer) clearInterval(dotTimer);
+  dotTimer = null;
+  setDotsActive(false);
+}
+
+async function startRecording() {
+  chunks = [];
+  audioIn.src = "";
+  audioOut.src = "";
+  btnSpeaker.disabled = true;
+
+  hintEl.textContent = "Listening…";
+  setStatus("Recording");
+  setChat("Listening… speak now.");
+  btnMic.classList.add("listening");
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    hintEl.textContent = "Ready to listen";
+    setStatus("Mic blocked");
+    setChat("Microphone permission is required.");
+    btnMic.classList.remove("listening");
+    alert("Microphone permission is required.");
+    return;
+  }
+
+  const options = {};
+  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+    options.mimeType = "audio/webm;codecs=opus";
+  } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
+    options.mimeType = "audio/ogg;codecs=opus";
+  }
+
+  mediaRecorder = new MediaRecorder(stream, options);
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = async () => {
+    stopDots();
+
+    const inBlob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+    audioIn.src = URL.createObjectURL(inBlob);
+
+    hintEl.textContent = "Processing…";
+    setStatus("Uploading");
+    setChat("Processing your message…");
+
+    try {
+      const backendUrl = backendUrlInput.value.trim();
+      const form = new FormData();
+      form.append("audio", inBlob, "recording.webm");
+
+      const res = await fetch(backendUrl, {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Backend error (${res.status}): ${text}`);
+      }
+
+      const transcript = res.headers.get("X-Transcript") || "—";
+      hintEl.textContent = "Ready to listen";
+      setStatus("Done");
+      setChat(transcript === "—" ? "Done." : transcript);
+
+      const wavBlob = await res.blob();
+      const wavUrl = URL.createObjectURL(wavBlob);
+      audioOut.src = wavUrl;
+
+      btnSpeaker.disabled = false;
+    } catch (err) {
+      console.error(err);
+      hintEl.textContent = "Ready to listen";
+      setStatus("Error");
+      setChat("Something went wrong. Check backend/CORS.");
+      alert(String(err));
+    } finally {
+      btnMic.classList.remove("listening");
+
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+    }
+  };
+
+  mediaRecorder.start();
+  startDots();
+  isRecording = true;
+}
+
+function stopRecording() {
+  if (!mediaRecorder) return;
+  hintEl.textContent = "Processing…";
+  setStatus("Processing");
+  setChat("Processing…");
+  mediaRecorder.stop();
+  isRecording = false;
+}
+
+btnMic.addEventListener("click", () => {
+  if (!isRecording) startRecording();
+  else stopRecording();
+});
+
+btnSpeaker.addEventListener("click", async () => {
+  try {
+    await audioOut.play();
+  } catch {
+    // ignore autoplay restrictions
+  }
+});
+</script>
+</body>
+</html>
