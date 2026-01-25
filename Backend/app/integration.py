@@ -8,6 +8,7 @@ import datetime
 import json
 import re
 
+
 # MongoDB Configuration
 MONGO_URI = "mongodb://localhost:27017/"
 DB_NAME = "nls"
@@ -37,11 +38,14 @@ Rules:
 - Output format: INTENT;PARAM1;PARAM2;...
 - Today's day is """ + v + """
 - For weather queries: GET_WEATHER;LOCATION or GET_WEATHER_BY_DAY;LOCATION;DAY
-- For appointments: CREATE_APPOINTMENT;{json} or UPDATE_APPOINTMENT;ID;{json}
+- For CREATE_APPOINTMENT: CREATE_APPOINTMENT;{"title":"Meeting","description":"Team sync","start_time":"2024-01-20 10:00","end_time":"2024-01-20 11:00","location":"Office"}
+- For UPDATE_APPOINTMENT: UPDATE_APPOINTMENT;ID;{"title":"Updated Meeting"}
+- For READ_APPOINTMENT_BY_ID: READ_APPOINTMENT_BY_ID;ID
+- For DELETE_APPOINTMENT: DELETE_APPOINTMENT;ID
 - Extract location and day from context if not explicitly mentioned
-- Do NOT include explanations
+- Do NOT include explanations, ONLY output the intent line
+- Ensure JSON is valid and on a single line
 """
-
 def nlu_parse(user_utterance, dialogue_state=None):
     if dialogue_state is None:
         dialogue_state = {}
@@ -67,6 +71,56 @@ Intent:"""
 
 
 def parse_intent_response(intent_string):
+    """Parse the LLM response to extract intent and parameters"""
+    parts = intent_string.split(';', 1)  # Split only on FIRST semicolon
+    
+    result = {
+        'intent': parts[0].strip(),
+        'params': {}
+    }
+    
+    # Extract parameters based on intent type
+    if 'GET_WEATHER' in result['intent']:
+        subparts = intent_string.split(';')
+        if len(subparts) > 1:
+            result['params']['place'] = subparts[1].strip()
+        if len(subparts) > 2:
+            result['params']['day'] = subparts[2].strip()
+    
+    elif 'APPOINTMENT' in result['intent']:
+        # For CREATE_APPOINTMENT, expect JSON after semicolon
+        if result['intent'] == 'CREATE_APPOINTMENT':
+            if len(parts) > 1:
+                json_str = parts[1].strip()
+                try:
+                    result['params'] = json.loads(json_str)
+                    print(f"[DEBUG] Parsed appointment JSON: {result['params']}")
+                except json.JSONDecodeError as e:
+                    print(f"[ERROR] Failed to parse JSON: {e}")
+                    print(f"[ERROR] Raw string: {json_str}")
+                    # Try to extract JSON pattern
+                    json_match = re.search(r'\{[^}]+\}', json_str)
+                    if json_match:
+                        try:
+                            result['params'] = json.loads(json_match.group())
+                            print(f"[DEBUG] Extracted JSON: {result['params']}")
+                        except:
+                            pass
+        
+        # For UPDATE/READ/DELETE, extract ID first, then JSON if present
+        elif result['intent'] in ['UPDATE_APPOINTMENT', 'READ_APPOINTMENT_BY_ID', 'DELETE_APPOINTMENT']:
+            subparts = intent_string.split(';')
+            if len(subparts) > 1 and subparts[1].strip().isdigit():
+                result['params']['id'] = int(subparts[1].strip())
+            
+            # For UPDATE, also look for JSON
+            if result['intent'] == 'UPDATE_APPOINTMENT' and len(subparts) > 2:
+                try:
+                    result['params'].update(json.loads(subparts[2].strip()))
+                except:
+                    pass
+    
+    return result
     """Parse the LLM response to extract intent and parameters"""
     parts = intent_string.split(';')
     
