@@ -43,24 +43,6 @@ def _prompt_builder(nlg_input: Dict[str, Any]) -> str:
     
     Convert this into natural speech output.
     """.strip()
-    return f"""
-    You are an NLG component for a voice assistant.
-    Return ONLY valid JSON with exactly these keys:
-    {{
-      "text": string,
-      "follow_up_question": string|null,
-      "to_confirm": boolean
-    }}
-    Rules:
-    - Use ONLY the data inside tool_results. Do not invent facts.
-    - If required info is missing, ask ONE short follow-up question.
-    - Keep responses short only 1 sentence and speakable.
-    - Prefer a single-day answer if entities.day is present.
-    
-    nlg_input:
-    {json.dumps(nlg_input, ensure_ascii=False)} 
-    
-    """.strip()
 
 ### the nlg_input just seperates instriction from our data
 ## so we insert the json input and keep non englisch characters readable
