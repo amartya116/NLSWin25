@@ -38,10 +38,14 @@ Rules:
 - Output format: INTENT;PARAM1;PARAM2;...
 - Today's day is """ + v + """
 - For weather queries: GET_WEATHER;LOCATION or GET_WEATHER_BY_DAY;LOCATION;DAY
-- For CREATE_APPOINTMENT: CREATE_APPOINTMENT;{"title":"Meeting","description":"Team sync","start_time":"2024-01-20 10:00","end_time":"2024-01-20 11:00","location":"Office"}
+- the date and time is """ + str(x) + """ and every appointment should be 60 min unless explicitly stated 
+-the description should be a one sentence summery of the request and along with title, it should be necessary even when you are updating.
+- For CREATE_APPOINTMENT: CREATE_APPOINTMENT;for example = {"title":"Meeting","description":"Team sync","start_time":"" ,"end_time":"","location":"Office"} figure out title, description and start and end time and location by yourself
 - For UPDATE_APPOINTMENT: UPDATE_APPOINTMENT;ID;{"title":"Updated Meeting"}
+THIS IS IMPORTANT-When UPDATING appointment u MUST update description and also MUST UPDATE dates and location if these were specified.
 - For READ_APPOINTMENT_BY_ID: READ_APPOINTMENT_BY_ID;ID
 - For DELETE_APPOINTMENT: DELETE_APPOINTMENT;ID
+
 - Extract location and day from context if not explicitly mentioned
 - Do NOT include explanations, ONLY output the intent line
 - Ensure JSON is valid and on a single line
@@ -120,10 +124,11 @@ def parse_intent_response(intent_string):
                 except:
                     pass
     
-    return result
-    """Parse the LLM response to extract intent and parameters"""
+
+    """Parse the LLM response to extract intent and parameters """
+
+
     parts = intent_string.split(';')
-    
     result = {
         'intent': parts[0].strip(),
         'params': {}
@@ -151,6 +156,52 @@ def parse_intent_response(intent_string):
     
     return result
 
+#-----------------------------
+
+
+def process_text_input(user_text: str, dialogue_state=None) -> str:
+    """
+    Process text input from frontend
+    Saves query and response to MongoDB
+
+    Args:
+        user_text: Text input from user
+        dialogue_state: Optional dialogue state dictionary for context
+
+    Returns:
+        Response text
+    """
+    if dialogue_state is None:
+        dialogue_state = {}
+
+    # Step 1: Parse intent from the text
+    intent_raw = nlu_parse(user_text, dialogue_state)
+    print(f"[NLU] Raw Intent: {intent_raw}")
+
+    # Step 2: Parse the intent response
+    parsed_intent = parse_intent_response(intent_raw)
+    print(f"[NLU] Parsed Intent: {parsed_intent}")
+
+    # Step 3: Execute the intent to get the response
+    response_text = execute_intent(parsed_intent, dialogue_state)
+    print(f"[Execution] Response: {response_text}")
+
+    # Step 4: Save to MongoDB
+    try:
+        conversations.insert_one({
+            "query": user_text,
+            "response": response_text,
+            "timestamp": datetime.datetime.now()
+        })
+        print("[MongoDB] ✓ Saved to database")
+    except Exception as e:
+        print(f"[MongoDB] ✗ Failed to save: {e}")
+
+    return response_text
+
+
+#----------------------------
+
 
 def execute_intent(parsed_intent, dialogue_state=None):
     """Execute the appropriate function based on parsed intent"""
@@ -164,12 +215,13 @@ def execute_intent(parsed_intent, dialogue_state=None):
     if intent == 'GET_WEATHER':
         place = params.get('place') or dialogue_state.get('last_location', 'Marburg')
         result = weather_get(place)
+        print("GET_WEATHER:---------------" + result)
         
         if result and "forecast" in result:
             dialogue_state['last_location'] = place
             
             # Format the forecast inline
-            place_name = result.get("place", "Unknown")
+            place_name = result.get("place", "Marburg")
             forecast_text = f"Weather forecast for {place_name}:\n\n"
             
             for day_forecast in result["forecast"]:
@@ -193,6 +245,8 @@ def execute_intent(parsed_intent, dialogue_state=None):
             return "Please specify a day"
         
         result = weather_get_by_day(place, day)
+        print("GET_WEATHER_BY_DAY:---------------" + place)
+
         
         if result:
             dialogue_state['last_location'] = place
@@ -308,90 +362,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("✓ Done! Refresh MongoDB Compass to see 'conversations' collection")
     print("=" * 60)
-
-
-
-def process_text_input(user_text: str, dialogue_state=None) -> str:
-    """
-    Process text input from frontend
-    Saves query and response to MongoDB
-    
-    Args:
-        user_text: Text input from user
-        dialogue_state: Optional dialogue state dictionary for context
-    
-    Returns:
-        Response text
-    """
-    if dialogue_state is None:
-        dialogue_state = {}
-    
-    # Step 1: Parse intent from the text
-    intent_raw = nlu_parse(user_text, dialogue_state)
-    print(f"[NLU] Raw Intent: {intent_raw}")
-    
-    # Step 2: Parse the intent response
-    parsed_intent = parse_intent_response(intent_raw)
-    print(f"[NLU] Parsed Intent: {parsed_intent}")
-    
-    # Step 3: Execute the intent to get the response
-    response_text = execute_intent(parsed_intent, dialogue_state)
-    print(f"[Execution] Response: {response_text}")
-    
-    # Step 4: Save to MongoDB
-    try:
-        conversations.insert_one({
-            "query": user_text,
-            "response": response_text,
-            "timestamp": datetime.datetime.now()
-        })
-        print("[MongoDB] ✓ Saved to database")
-    except Exception as e:
-        print(f"[MongoDB] ✗ Failed to save: {e}")
-    
-    return response_text
-
-
-def process_audio_to_audio(audio_path: str, dialogue_state=None) -> str:
-    """
-    Complete pipeline: Audio → Text (ASR) → Intent → Execution → Speech (TTS)
-    Saves query and response to MongoDB
-    
-    Args:
-        audio_path: Path to the input audio file (WAV format)
-        dialogue_state: Optional dialogue state dictionary for context
-    
-    Returns:
-        Path to the output WAV file with the response
-    """
-    if dialogue_state is None:
-        dialogue_state = {}
-    
-    # Step 1: Convert audio to text using ASR
-    user_text = transcribe_wav(audio_path)
-    print(f"[ASR] Transcribed: {user_text}")
-    
-    # Step 2: Parse intent from the transcribed text
-    intent_raw = nlu_parse(user_text, dialogue_state)
-    print(f"[NLU] Raw Intent: {intent_raw}")
-    
-    # Step 3: Parse the intent response
-    parsed_intent = parse_intent_response(intent_raw)
-    print(f"[NLU] Parsed Intent: {parsed_intent}")
-    
-    # Step 4: Execute the intent to get the natural language response
-    response_text = execute_intent(parsed_intent, dialogue_state)
-    print(f"[Execution] Response: {response_text}")
-    
-    # Step 5: Save to MongoDB
-    conversations.insert_one({
-        "query": user_text,
-        "response": response_text,
-        "timestamp": datetime.datetime.now()
-    })
-    
-    # Step 6: Convert the response text to speech using TTS
-    output_audio_path = synth_to_wav(response_text)
-    print(f"[TTS] Output: {output_audio_path}")
-    
-    return output_audio_path

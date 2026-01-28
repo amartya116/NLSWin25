@@ -17,8 +17,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Transcript", "X-Assistant-Text"],
+    expose_headers=["X-Transcript", "X-Assistant-Text", "X-Execution-Result"]
 )
+
+
 
 # Load OpenAI Whisper Model
 asr_model = whisper.load_model("base")
@@ -74,6 +76,7 @@ async def speech_to_speech(audio: UploadFile = File(...)):
             dialogue_state = {}
             execution_result = process_text_input(transcript, dialogue_state)
             print(f"[Integration] Execution Result: {execution_result}")
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Intent processing failed: {e}")
 
@@ -103,6 +106,9 @@ async def speech_to_speech(audio: UploadFile = File(...)):
         # TTS: Text to Speech using pyttsx3
         try:
             run_tts(response_text, out_wav)
+            #checking if audio output file actually exists
+            print("--------TTS file exists:", os.path.exists(out_wav), "size:", os.path.getsize(out_wav) if os.path.exists(out_wav) else None)
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
 

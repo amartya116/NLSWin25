@@ -2,7 +2,7 @@ import requests
 
 teamid = 1123
 
-# ============= CALENDAR FUNCTIONS =============
+# ============= APPOINTMENT FUNCTIONS =============
 def calendercreate(teamid,title,description,start_time,end_time,location):
     try:
         url = f'https://api.responsible-nlp.net/calendar.php?calenderid={1123}'
