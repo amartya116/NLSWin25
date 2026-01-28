@@ -2,6 +2,10 @@ fastapi
 uvicorn[standard]
 python-multipart
 faster-whisper
+ffmpeg
 soundfile
 numpy
 piper-tts
+Ollama
+pymongo
+openai-whisper

@@ -226,8 +226,9 @@ h1 {
   </div>
   
   <div class="backend-input">
-    <input type="text" id="backendUrl" value="http://127.0.0.1:8000/speech2speech" placeholder="Backend URL">
+    <input type="text" id="backendUrl" value="http://localhost:8000/speech2speech" placeholder="Backend URL">
   </div>
+
   
   <audio id="audioIn" class="hidden-audio"></audio>
   <audio id="audioOut" class="hidden-audio"></audio>
@@ -355,18 +356,25 @@ async function startRecording() {
         method: "POST",
         body: form,
       });
+      console.log("content-type:", res.headers.get("content-type"));
 
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Backend error (${res.status}): ${text}`);
       }
 
-      const transcript = res.headers.get("X-Transcript") || "—";
+      const transcript = res.headers.get("X-transcript") || "—";
       hintEl.textContent = "Ready to listen";
       setStatus("Done");
       setChat(transcript === "—" ? "Done." : transcript);
 
-      const wavBlob = await res.blob();
+    // const wavBlob = await res.blob()
+    // forcing blob type audio to avoid unnecessary problems with output audio
+      const rawBlob = await res.blob();
+      const wavBlob = new Blob([rawBlob], { type: "audio/wav" });
+
+      console.log("wavBlob type:", wavBlob.type, "size:", wavBlob.size);
+
       const wavUrl = URL.createObjectURL(wavBlob);
       audioOut.src = wavUrl;
 
@@ -409,8 +417,10 @@ btnMic.addEventListener("click", () => {
 btnSpeaker.addEventListener("click", async () => {
   try {
     await audioOut.play();
-  } catch {
-    // ignore autoplay restrictions
+    console.log("playing");
+  } catch (e) {
+    console.error("play() failed:", e);
+    alert("play failed: " + e);
   }
 });
 </script>

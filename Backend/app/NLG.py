@@ -2,12 +2,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 import json
-
+import os
 import httpx
 
+DEFAULT_OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
-DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
-DEFAULT_MODEL = "llama3.2"
 
 @dataclass
 class NlgResult:
