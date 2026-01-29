@@ -73,7 +73,7 @@ async def speech_to_speech(audio: UploadFile = File(...)):
     if not audio.content_type or not audio.content_type.startswith(("audio/", "video/")):
         raise HTTPException(status_code=400, detail=f"Upload an audio file. Got: {audio.content_type}")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=".") as tmpdir:
         raw_path = os.path.join(tmpdir, audio.filename or "input.bin")
         out_wav = os.path.join(tmpdir, "output_tts.wav")
 

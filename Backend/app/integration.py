@@ -67,8 +67,8 @@ Rules:
 - Today's day is {v}
 - The date and time is {x} and every appointment should be 60 min unless explicitly stated
 - For weather queries: output MUST be one of:
-  - GET_WEATHER;Berlin
-  - GET_WEATHER_BY_DAY;Berlin;Saturday
+  - GET_WEATHER; (LOCATION)
+  - GET_WEATHER_BY_DAY;(LOCATION);(day)
 - IF ASKED ABOUT WEATHER make sure to mention Actual Temperatures in your response.
 - IMPORTANT: Do NOT output key/value pairs like LOCATION="..." or DAY="...".
 - IMPORTANT: Day must be a weekday word only (Monday...Sunday), no quotes.
