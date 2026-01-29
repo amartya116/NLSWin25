@@ -220,11 +220,19 @@ h1 {
       </svg>
     </button>
   </div>
-  
+
   <div class="chat-box">
     <p class="chat-text" id="chatText">Hi! I'm your audio assistant. Press the microphone to start talking.</p>
+    <p class="chat-text" id="userText">
+  </p>
   </div>
-  
+
+  <div class="chat-box">
+  <p class="chat-text" id="assistantText" style="opacity:0.9; margin-top:12px;">
+    —
+  </p>
+</div>
+
   <div class="backend-input">
     <input type="text" id="backendUrl" value="http://localhost:8000/speech2speech" placeholder="Backend URL">
   </div>
@@ -362,11 +370,25 @@ async function startRecording() {
         const text = await res.text();
         throw new Error(`Backend error (${res.status}): ${text}`);
       }
+      const transcript = res.headers.get("X-Transcript") || "—";
+      const assistantText = res.headers.get("X-Assistant-Text") || "—";
 
-      const transcript = res.headers.get("X-transcript") || "—";
       hintEl.textContent = "Ready to listen";
       setStatus("Done");
-      setChat(transcript === "—" ? "Done." : transcript);
+
+      // setChat(transcript === "—" ? "Done." : transcript);
+
+      // new two-line display
+      document.getElementById("userText").textContent =
+        transcript !== "—" ? transcript : "—";
+
+      document.getElementById("assistantText").textContent =
+        assistantText !== "—" ? assistantText : "—";
+
+      // remove "Processing your message…"
+      chatText.textContent = "";
+
+
 
     // const wavBlob = await res.blob()
     // forcing blob type audio to avoid unnecessary problems with output audio
