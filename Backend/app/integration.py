@@ -244,7 +244,7 @@ def execute_intent(parsed_intent, dialogue_state=None):
     if intent == 'GET_WEATHER':
         place = params.get('place') or dialogue_state.get('last_location', 'Marburg')
         result = weather_get(place)
-        print("GET_WEATHER:---------------" + result)
+        print("GET_WEATHER:---------------" + str(result))
         
         if result and "forecast" in result:
             dialogue_state['last_location'] = place
@@ -274,7 +274,7 @@ def execute_intent(parsed_intent, dialogue_state=None):
             return "Please specify a day"
         
         result = weather_get_by_day(place, day)
-        print("GET_WEATHER_BY_DAY:---------------" + place)
+        print("GET_WEATHER_BY_DAY:---------------" + str(result))
 
         
         if result:
