@@ -5,8 +5,9 @@ import json
 import os
 import httpx
 
-DEFAULT_OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+DEFAULT_OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
 
 
 @dataclass

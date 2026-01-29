@@ -6,8 +6,8 @@ import pyttsx3
 import tempfile
 import os
 
-from integration import process_text_input
-from NLG import generate_nlg
+from .integration import process_text_input
+from .NLG import generate_nlg
 
 app = FastAPI()
 
@@ -27,12 +27,26 @@ asr_model = whisper.load_model("base")
 
 
 def run_tts(text: str, output_wav: str) -> None:
-    """Convert text to speech using pyttsx3"""
+    """Convert text to speech using pyttsx3 with more natural voice"""
     try:
         engine = pyttsx3.init()
+
+        # Set voice to a more natural one (female/male depends on installed voices)
+        voices = engine.getProperty('voices')
+        # Pick a female voice if available, else default
+        voice = next((v for v in voices if 'female' in v.name.lower()), voices[0])
+        engine.setProperty('voice', voice.id)
+
+        # Adjust speech rate (default is ~200 wpm)
+        engine.setProperty('rate', 170)
+
+        # Adjust volume (0.0 to 1.0)
+        engine.setProperty('volume', 1.0)
+
         engine.save_to_file(text, output_wav)
         engine.runAndWait()
-        print(f"[TTS] Saved audio to: {output_wav}")
+        print(f"[TTS] Saved audio to: {output_wav} with voice '{voice.name}'")
+
     except Exception as e:
         raise RuntimeError(f"TTS failed: {e}")
 

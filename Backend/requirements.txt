@@ -9,3 +9,4 @@ piper-tts
 Ollama
 pymongo
 openai-whisper
+pyttsx3

@@ -1,26 +1,29 @@
 import ollama
 from pymongo import MongoClient
-from responserev import (calendercreate, calendergetall, calendergetbyid,
+from .responserev import (calendercreate, calendergetall, calendergetbyid,
                        calenderupdate, calenderdelete, calenderdelete_by_title, calendergetbytitle,
                        weather_get, weather_get_by_day)
 
 import datetime
 import json
 import re
+import os
 
 
-# MongoDB Configuration
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "nls"
 
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://host.docker.internal:27017/")
 client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-conversations = db["conversations"]
+
+
+os.environ["OLLAMA_HOST"] = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 x = datetime.datetime.now()
 v = x.strftime("%A")
-MODEL = "llama3"
 
+client = MongoClient(MONGO_URI)
+db = client["nls"]
+conversations = db["conversations"]
 SYSTEM_PROMPT = """
 You are a Natural Language Understanding (NLU) component for a voice assistant.
 Your task: Identify the user's intent from their utterance.
@@ -68,10 +71,9 @@ def nlu_parse(user_utterance, dialogue_state=None):
 User utterance: "{user_utterance}"
 
 Intent:"""
-
     response = ollama.generate(
         model=MODEL,
-        prompt=prompt
+        prompt=prompt,
     )
 
     intent = response["response"].strip()
@@ -244,7 +246,7 @@ def execute_intent(parsed_intent, dialogue_state=None):
     if intent == 'GET_WEATHER':
         place = params.get('place') or dialogue_state.get('last_location', 'Marburg')
         result = weather_get(place)
-        print("GET_WEATHER:---------------" + result)
+        print("GET_WEATHER:---------------" + str(result))
         
         if result and "forecast" in result:
             dialogue_state['last_location'] = place

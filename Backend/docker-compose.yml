@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  nlswin25-app:
+    build: .
+    container_name: nlswin25-app
+    ports:
+      - "11434:11434"  # Ollama API port
+      - "5000:5000"    # Optional: if you have a web interface
+    volumes:
+      - ollama_data:/root/.ollama  # Persist Ollama models
+      - ./models:/app/models       # Mount models directory
+      - ./__pycache__:/app/__pycache__
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    
+    # Uncomment for GPU support (requires NVIDIA Container Toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  ollama_data:
