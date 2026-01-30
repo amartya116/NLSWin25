@@ -34,9 +34,30 @@ def extract_weekday_from_text(text: str) -> str | None:
     return None
 
 
-def user_mentioned_place(text: str) -> bool:
-    # Basic but effective: detects "in Berlin", "in Frankfurt am Main", etc.
-    return bool(re.search(r"\bin\s+[A-Za-zÄÖÜäöüß]", text or "", re.IGNORECASE))
+def user_mentioned_place(text: str, place: str | None = None) -> bool:
+    t = text or ""
+
+    # Pattern like: "in Berlin", "in Frankfurt am Main"
+    if re.search(r"\bin\s+[A-Za-zÄÖÜäöüß]", t, re.IGNORECASE):
+        return True
+
+    # If NLU extracted a place and it appears in the utterance, count it as mentioned
+    if place:
+        p = place.strip()
+        if p:
+            lt = t.lower()
+            lp = p.lower()
+
+            # direct match (handles "Frankfurt", "Frankfurt am Main", etc.)
+            if lp in lt:
+                return True
+
+            # also allow matching only the first token of a multiword place
+            first = lp.split()[0]
+            if first and re.search(rf"\b{re.escape(first)}\b", lt):
+                return True
+
+    return False
 
 
 def _now_context():
@@ -234,10 +255,14 @@ def process_text_input(user_text: str, dialogue_state=None) -> str:
     # - treat it as GET_WEATHER_BY_DAY
     # - use last_location (so remove any model-invented place)
     day_override = extract_weekday_from_text(user_text)
+    day_override = extract_weekday_from_text(user_text)
     if day_override and parsed_intent["intent"] in ("GET_WEATHER", "GET_WEATHER_BY_DAY"):
-        if not user_mentioned_place(user_text):
-            parsed_intent["intent"] = "GET_WEATHER_BY_DAY"
-            parsed_intent["params"]["day"] = day_override
+        parsed_intent["intent"] = "GET_WEATHER_BY_DAY"
+        parsed_intent["params"]["day"] = day_override
+
+        extracted_place = parsed_intent["params"].get("place")
+        # Only drop the place if the user truly did NOT mention it
+        if extracted_place is None:
             parsed_intent["params"].pop("place", None)
 
     response_text = execute_intent(parsed_intent, dialogue_state)

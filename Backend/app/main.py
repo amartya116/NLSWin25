@@ -6,6 +6,12 @@ import pyttsx3
 import tempfile
 import os
 import re
+import threading
+import time
+import uuid
+
+
+
 
 from .integration import process_text_input
 from .NLG import generate_nlg
@@ -26,6 +32,19 @@ asr_model = whisper.load_model("base")
 # Simple in-memory session state (persists last_location, last_date, etc. between requests)
 SESSION_STATE = {}
 
+TTS_LOCK = threading.Lock()
+TTS_ENGINE = pyttsx3.init()
+
+_best_voice = _pick_best_voice(TTS_ENGINE)
+if _best_voice:
+    TTS_ENGINE.setProperty("voice", _best_voice.id)
+    print(f"[TTS] Default voice: {_best_voice.name} ({_best_voice.id})")
+else:
+    print("[TTS] Default voice: (none found)")
+
+TTS_ENGINE.setProperty("rate", 160)   # less “chipmunk”
+TTS_ENGINE.setProperty("volume", 1.0)
+
 
 def _pick_best_voice(engine: pyttsx3.Engine):
     voices = engine.getProperty("voices") or []
@@ -34,35 +53,48 @@ def _pick_best_voice(engine: pyttsx3.Engine):
         name = (getattr(v, "name", "") or "").lower()
         vid = (getattr(v, "id", "") or "").lower()
         s = 0
+
+        # strongly avoid Caribbean / weird accents
+        if "caribbean" in name or "caribbean" in vid:
+            s -= 200
+
+        # prefer US/UK if present
+        if any(k in name or k in vid for k in ["en-us", "en_us", "united states", "american"]):
+            s += 100
+        if any(k in name or k in vid for k in ["en-gb", "en_gb", "united kingdom", "great britain", "british"]):
+            s += 90
+
+        # generic English
         if "english" in name or "english" in vid:
-            s += 10
-        if re.search(r"\ben\b", name) or re.search(r"\ben\b", vid):
-            s += 5
-        if "afrikaans" in name or "afrikaans" in vid:
-            s -= 10
+            s += 20
+
         return s
 
-    return sorted(voices, key=score, reverse=True)[0] if voices else None
+    return max(voices, key=score) if voices else None
 
 
-def run_tts(text: str, output_wav: str) -> None:
-    try:
-        engine = pyttsx3.init()
 
-        best = _pick_best_voice(engine)
-        if best:
-            engine.setProperty("voice", best.id)
-            print(f"[TTS] Using voice: {best.name}")
+def run_tts(text: str) -> str:
+    out_wav = f"/tmp/nls_tts_{uuid.uuid4().hex}.wav"
+    os.makedirs("/tmp", exist_ok=True)
 
-        engine.setProperty("rate", 170)
-        engine.setProperty("volume", 1.0)
+    with TTS_LOCK:
+        # pyttsx3 can be flaky; make sure any old queue is cleared
+        try:
+            TTS_ENGINE.stop()
+        except Exception:
+            pass
 
-        engine.save_to_file(text, output_wav)
-        engine.runAndWait()
+        TTS_ENGINE.save_to_file(text, out_wav)
+        TTS_ENGINE.runAndWait()
 
-        print(f"[TTS] Saved audio to: {output_wav}")
-    except Exception as e:
-        raise RuntimeError(f"TTS failed: {e}")
+    # Wait for file to actually appear (espeak can finalize asynchronously)
+    for _ in range(50):  # up to 5 seconds
+        if os.path.exists(out_wav) and os.path.getsize(out_wav) > 0:
+            return out_wav
+        time.sleep(0.1)
+
+    raise RuntimeError(f"TTS produced no output: {out_wav}")
 
 def _safe_header(v: str) -> str:
     return (v or "").replace("\r", " ").replace("\n", " ").strip()
@@ -75,7 +107,6 @@ async def speech_to_speech(audio: UploadFile = File(...)):
 
     with tempfile.TemporaryDirectory(dir=".") as tmpdir:
         raw_path = os.path.join(tmpdir, audio.filename or "input.bin")
-        out_wav = os.path.join(tmpdir, "output_tts.wav")
 
         data_bytes = await audio.read()
         with open(raw_path, "wb") as f:
@@ -125,26 +156,20 @@ async def speech_to_speech(audio: UploadFile = File(...)):
 
         # TTS
         try:
-            run_tts(response_text, out_wav)
-            print("--------TTS file exists:", os.path.exists(out_wav), "size:", os.path.getsize(out_wav) if os.path.exists(out_wav) else None)
+            out_wav = run_tts(response_text)
+            print("--------TTS file exists:", os.path.exists(out_wav), "size:", os.path.getsize(out_wav))
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
-
-        if not os.path.exists(out_wav) or os.path.getsize(out_wav) == 0:
-            raise HTTPException(status_code=500, detail="TTS produced no output.")
 
         with open(out_wav, "rb") as f:
             audio_bytes = f.read()
 
-        return Response(
-            content=audio_bytes,
-            media_type="audio/wav",
-            headers={
-                "X-Transcript": _safe_header(transcript),
-                "X-Assistant-Text": _safe_header(response_text),
-                "Content-Disposition": 'attachment; filename="speech_output.wav"',
-            },
-        )
+        # cleanup
+        try:
+            os.remove(out_wav)
+        except Exception:
+            pass
+                
 
 
 @app.get("/health")
