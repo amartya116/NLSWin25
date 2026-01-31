@@ -33,18 +33,6 @@ asr_model = whisper.load_model("base")
 SESSION_STATE = {}
 
 TTS_LOCK = threading.Lock()
-TTS_ENGINE = pyttsx3.init()
-
-_best_voice = _pick_best_voice(TTS_ENGINE)
-if _best_voice:
-    TTS_ENGINE.setProperty("voice", _best_voice.id)
-    print(f"[TTS] Default voice: {_best_voice.name} ({_best_voice.id})")
-else:
-    print("[TTS] Default voice: (none found)")
-
-TTS_ENGINE.setProperty("rate", 160)   # less “chipmunk”
-TTS_ENGINE.setProperty("volume", 1.0)
-
 
 def _pick_best_voice(engine: pyttsx3.Engine):
     voices = engine.getProperty("voices") or []
@@ -54,23 +42,40 @@ def _pick_best_voice(engine: pyttsx3.Engine):
         vid = (getattr(v, "id", "") or "").lower()
         s = 0
 
-        # strongly avoid Caribbean / weird accents
         if "caribbean" in name or "caribbean" in vid:
             s -= 200
 
-        # prefer US/UK if present
         if any(k in name or k in vid for k in ["en-us", "en_us", "united states", "american"]):
             s += 100
         if any(k in name or k in vid for k in ["en-gb", "en_gb", "united kingdom", "great britain", "british"]):
             s += 90
 
-        # generic English
         if "english" in name or "english" in vid:
             s += 20
 
         return s
 
     return max(voices, key=score) if voices else None
+
+
+TTS_ENGINE = pyttsx3.init()
+
+_best_voice = None
+try:
+    _best_voice = _pick_best_voice(TTS_ENGINE)
+except Exception as e:
+    print(f"[TTS] Voice pick failed: {e}")
+
+if _best_voice:
+    TTS_ENGINE.setProperty("voice", _best_voice.id)
+    print(f"[TTS] Default voice: {_best_voice.name} ({_best_voice.id})")
+else:
+    print("[TTS] Default voice: (none found)")
+
+TTS_ENGINE.setProperty("rate", 160)
+TTS_ENGINE.setProperty("volume", 1.0)
+
+
 
 
 
@@ -169,6 +174,17 @@ async def speech_to_speech(audio: UploadFile = File(...)):
             os.remove(out_wav)
         except Exception:
             pass
+
+    return Response(
+            content=audio_bytes,
+            media_type="audio/wav",
+            headers={
+                "X-Transcript": _safe_header(transcript),
+                "X-Assistant-Text": _safe_header(response_text),
+                "Content-Disposition": 'attachment; filename="speech_output.wav"',
+            },
+        )
+
                 
 
 
