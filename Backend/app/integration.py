@@ -96,7 +96,8 @@ Rules:
 - For CREATE_APPOINTMENT: CREATE_APPOINTMENT;{{"title":"...","description":"...","start_time":"...","end_time":"...","location":"..."}} and make sure to mention the title or location of the appointment in your response
 - For UPDATE_APPOINTMENT: UPDATE_APPOINTMENT;ID_OR_TITLE;{{"title":"...","description":"...","start_time":"...","end_time":"...","location":"..."}}
   When UPDATING, you MUST also update description and MUST update dates/location if specified by the user.
-- For READ_APPOINTMENT_BY_ID: READ_APPOINTMENT_BY_ID;ID
+  -for updating users might say update or change this event or appointment.
+- For READ_APPOINTMENT_BY_ID: READ_APPOINTMENT_BY_ID;ID 
 - For READ_APPOINTMENT_ALL: READ_APPOINTMENT_ALL
 - For DELETE_APPOINTMENT: DELETE_APPOINTMENT;ID_OR_TITLE
 - For DELETE_APPOINTMENT_ALL: DELETE_APPOINTMENT_ALL
@@ -104,7 +105,6 @@ Rules:
 - If the user does NOT mention a location, do NOT guess one. Leave it out.
 - Do NOT include explanations, ONLY output the intent line
 - Ensure JSON is valid and on a single line (when used)
-- 
 """.strip()
 
 
@@ -255,14 +255,10 @@ def process_text_input(user_text: str, dialogue_state=None) -> str:
     # - treat it as GET_WEATHER_BY_DAY
     # - use last_location (so remove any model-invented place)
     day_override = extract_weekday_from_text(user_text)
-    day_override = extract_weekday_from_text(user_text)
     if day_override and parsed_intent["intent"] in ("GET_WEATHER", "GET_WEATHER_BY_DAY"):
-        parsed_intent["intent"] = "GET_WEATHER_BY_DAY"
-        parsed_intent["params"]["day"] = day_override
-
-        extracted_place = parsed_intent["params"].get("place")
-        # Only drop the place if the user truly did NOT mention it
-        if extracted_place is None:
+        if not user_mentioned_place(user_text):
+            parsed_intent["intent"] = "GET_WEATHER_BY_DAY"
+            parsed_intent["params"]["day"] = day_override
             parsed_intent["params"].pop("place", None)
 
     response_text = execute_intent(parsed_intent, dialogue_state)

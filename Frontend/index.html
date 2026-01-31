@@ -345,77 +345,101 @@ async function startRecording() {
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
 
-  mediaRecorder.onstop = async () => {
-    stopDots();
+  function base64ToBlob(base64, mimeType = "application/octet-stream") {
+  // supports base64 with or without data URL prefix
+  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+  const binary = atob(clean);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
 
-    const inBlob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
-    audioIn.src = URL.createObjectURL(inBlob);
+mediaRecorder.onstop = async () => {
+  stopDots();
 
-    hintEl.textContent = "Processing…";
-    setStatus("Uploading");
-    setChat("Processing your message…");
+  const inBlob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+  audioIn.src = URL.createObjectURL(inBlob);
 
-    try {
-      const backendUrl = backendUrlInput.value.trim();
-      const form = new FormData();
-      form.append("audio", inBlob, "recording.webm");
+  hintEl.textContent = "Processing…";
+  setStatus("Uploading");
+  setChat("Processing your message…");
 
-      const res = await fetch(backendUrl, {
-        method: "POST",
-        body: form,
-      });
-      console.log("content-type:", res.headers.get("content-type"));
+  try {
+    const backendUrl = backendUrlInput.value.trim();
+    const form = new FormData();
+    form.append("audio", inBlob, "recording.webm");
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Backend error (${res.status}): ${text}`);
-      }
-      const transcript = res.headers.get("X-Transcript") || "—";
-      const assistantText = res.headers.get("X-Assistant-Text") || "—";
+    const res = await fetch(backendUrl, {
+      method: "POST",
+      body: form,
+    });
 
-      hintEl.textContent = "Ready to listen";
-      setStatus("Done");
+    const contentType = res.headers.get("content-type") || "";
+    console.log("content-type:", contentType);
 
-      // setChat(transcript === "—" ? "Done." : transcript);
-
-      // new two-line display
-      document.getElementById("userText").textContent =
-        transcript !== "—" ? transcript : "—";
-
-      document.getElementById("assistantText").textContent =
-        assistantText !== "—" ? assistantText : "—";
-
-      // remove "Processing your message…"
-      chatText.textContent = "";
-
-
-
-    // const wavBlob = await res.blob()
-    // forcing blob type audio to avoid unnecessary problems with output audio
-      const rawBlob = await res.blob();
-      const wavBlob = new Blob([rawBlob], { type: "audio/wav" });
-
-      console.log("wavBlob type:", wavBlob.type, "size:", wavBlob.size);
-
-      const wavUrl = URL.createObjectURL(wavBlob);
-      audioOut.src = wavUrl;
-
-      btnSpeaker.disabled = false;
-    } catch (err) {
-      console.error(err);
-      hintEl.textContent = "Ready to listen";
-      setStatus("Error");
-      setChat("Something went wrong. Check backend/CORS.");
-      alert(String(err));
-    } finally {
-      btnMic.classList.remove("listening");
-
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
-        stream = null;
-      }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Backend error (${res.status}): ${text}`);
     }
-  };
+
+    // NEW: backend returns JSON
+    if (!contentType.includes("application/json")) {
+      // Helps debug if backend still returns audio/wav
+      const text = await res.text();
+      throw new Error(`Expected JSON but got: ${contentType}. Body: ${text.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const transcript = data.transcript || "—";
+    const assistantText = data.assistant_text || "—";
+    const audioBase64 = data.audio_base64;
+    const audioFormat = (data.audio_format || "wav").toLowerCase();
+
+    hintEl.textContent = "Ready to listen";
+    setStatus("Done");
+
+    document.getElementById("userText").textContent = transcript;
+    document.getElementById("assistantText").textContent = assistantText;
+
+    // remove "Processing your message…"
+    chatText.textContent = "";
+
+    if (!audioBase64) {
+      btnSpeaker.disabled = true;
+      throw new Error("Backend returned no audio_base64.");
+    }
+
+    // decode base64 audio -> blob -> audio element
+    const mime = audioFormat === "wav" ? "audio/wav"
+               : audioFormat === "mp3" ? "audio/mpeg"
+               : audioFormat === "ogg" ? "audio/ogg"
+               : "application/octet-stream";
+
+    const outBlob = base64ToBlob(audioBase64, mime);
+    console.log("outBlob type:", outBlob.type, "size:", outBlob.size);
+
+    const outUrl = URL.createObjectURL(outBlob);
+    audioOut.src = outUrl;
+
+    btnSpeaker.disabled = false;
+  } catch (err) {
+    console.error(err);
+    hintEl.textContent = "Ready to listen";
+    setStatus("Error");
+    setChat("Something went wrong. Check backend/CORS.");
+    alert(String(err));
+  } finally {
+    btnMic.classList.remove("listening");
+
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+  }
+};
+
+
 
   mediaRecorder.start();
   startDots();

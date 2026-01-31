@@ -44,6 +44,7 @@ Rules:
 - Keep responses short (1-2 sentences) and speakable
 - If the result contains structured data (like weather forecasts), summarize it naturally
 - If information is missing, ask ONE short follow-up question
+-if Execution Result = "No appointment ID specified" or ERROR --> say "I am having some problems understanding can you ask differently"
 
 Execution Result:
 {execution_result}

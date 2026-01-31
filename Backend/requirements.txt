@@ -5,7 +5,6 @@ faster-whisper
 ffmpeg
 soundfile
 numpy
-piper-tts
 Ollama
 pymongo
 openai-whisper
