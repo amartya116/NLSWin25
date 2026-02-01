@@ -43,8 +43,12 @@ Rules:
 - Convert the execution result into natural, conversational speech
 - Keep responses short (1-2 sentences) and speakable
 - If the result contains structured data (like weather forecasts), summarize it naturally
-- If information is missing, ask ONE short follow-up question
--if Execution Result = "No appointment ID specified" or ERROR --> say "I am having some problems understanding can you ask differently"
+- if execution_result is one of:
+  - MISSING_TITLE_READ_APPOINTMENT
+  - MISSING_TITLE_UPDATE_APPOINTMENT
+  - MISSING_TITLE_DELETE_APPOINTMENT
+set "follow_up_question" and keep "text" very short (e.g., "Sure.")
+- if MISSING_FIELDS_CREATE_APPOINTMENT → ask: “What’s the appointment title and what time should it start?”
 
 Execution Result:
 {execution_result}
@@ -55,7 +59,14 @@ Convert this into natural speech output.
 
 def _fallback(nlg_input: Dict[str, Any]) -> NlgResult:
     tool_results = (nlg_input or {}).get("tool_results", {}) or {}
-    execution_result = tool_results.get("execution_result")
+    execution_result = tool_results.get("execution_result", "")
+
+    if execution_result == "MISSING_TITLE_READ_APPOINTMENT":
+        return NlgResult(text="Sure.", follow_up_question="What’s the appointment title?")
+    if execution_result == "MISSING_TITLE_UPDATE_APPOINTMENT":
+        return NlgResult(text="Okay.", follow_up_question="Which appointment title should I update?")
+    if execution_result == "MISSING_TITLE_DELETE_APPOINTMENT":
+        return NlgResult(text="Alright.", follow_up_question="Which appointment title should I delete?")
 
     if isinstance(execution_result, str) and execution_result.strip():
         return NlgResult(text=execution_result.strip())
@@ -129,8 +140,23 @@ async def generate_nlg(
         raise OllamaNlgError("Empty response from Ollama")
 
     try:
-        return parse_nlg_output(raw)
+        res= parse_nlg_output(raw)
     except OllamaNlgError:
         if fallback_on_error:
             return _fallback(nlg_input)
         raise
+
+    tool_results= (nlg_input or {}).get("tool_results", {}) or {}
+    execution_result=tool_results.get("execution_result", "")
+
+    missing_title = {
+        "MISSING_TITLE_READ_APPOINTMENT",
+        "MISSING_TITLE_UPDATE_APPOINTMENT",
+        "MISSING_TITLE_DELETE_APPOINTMENT",
+    }
+    print(f"thios is exec result ----- +  {execution_result}")
+    if execution_result in missing_title and not res.follow_up_question:
+
+            return _fallback(nlg_input)
+
+    return res

@@ -9,7 +9,7 @@ import ollama
 from pymongo import MongoClient
 
 from .responserev import (
-    calendercreate, calendergetall, calendergetbyid, calenderupdate, calenderdelete, calendergetbytitle,
+    calendercreate, calendergetall, calenderupdate, calenderdelete, calendergetbytitle,
     weather_get, weather_get_by_day
 )
 
@@ -77,13 +77,13 @@ Allowed intents:
 - GET_WEATHER_BY_DAY
 - CREATE_APPOINTMENT
 - READ_APPOINTMENT_ALL
-- READ_APPOINTMENT_BY_ID
+- READ_APPOINTMENT
 - DELETE_APPOINTMENT
 - UPDATE_APPOINTMENT
 - DELETE_APPOINTMENT_ALL
 - DELETE_LAST_APPOINTMENT
 
-Rules:
+Rules (weather):
 - Output format: INTENT;PARAM1;PARAM2;...
 - Today's day is {v}
 - The date and time is {x} and every appointment should be 60 min unless explicitly stated
@@ -93,15 +93,18 @@ Rules:
 - IF ASKED ABOUT WEATHER make sure to mention Actual Temperatures in your response.
 - IMPORTANT: Do NOT output key/value pairs like LOCATION="..." or DAY="...".
 - IMPORTANT: Day must be a weekday word only (Monday...Sunday), no quotes.
+
+Rules (Appointments):
+- READ_APPOINTMENT;TITLE
+- DELETE_APPOINTMENT;TITLE
 - For CREATE_APPOINTMENT: CREATE_APPOINTMENT;{{"title":"...","description":"...","start_time":"...","end_time":"...","location":"..."}} and make sure to mention the title or location of the appointment in your response
-- For UPDATE_APPOINTMENT: UPDATE_APPOINTMENT;ID_OR_TITLE;{{"title":"...","description":"...","start_time":"...","end_time":"...","location":"..."}}
-  When UPDATING, you MUST also update description and MUST update dates/location if specified by the user.
-  -for updating users might say update or change this event or appointment.
-- For READ_APPOINTMENT_BY_ID: READ_APPOINTMENT_BY_ID;ID 
-- For READ_APPOINTMENT_ALL: READ_APPOINTMENT_ALL
-- For DELETE_APPOINTMENT: DELETE_APPOINTMENT;ID_OR_TITLE
-- For DELETE_APPOINTMENT_ALL: DELETE_APPOINTMENT_ALL
-- For DELETE_LAST_APPOINTMENT: DELETE_LAST_APPOINTMENT
+- For UPDATE_APPOINTMENT: UPDATE_APPOINTMENT;TITLE;{{"title":"...","description":"...","start_time":"...","end_time":"...","location":"..."}}
+- If TITLE is missing, still output the intent but leave TITLE empty:
+  - READ_APPOINTMENT;
+  - UPDATE_APPOINTMENT;;{...}
+  - DELETE_APPOINTMENT;
+-When UPDATING, you MUST also update description and MUST update dates/location if specified by the user.
+-for updating users might say update or change this event or appointment.
 - If the user does NOT mention a location, do NOT guess one. Leave it out.
 - Do NOT include explanations, ONLY output the intent line
 - Ensure JSON is valid and on a single line (when used)
@@ -202,31 +205,44 @@ def parse_intent_response(intent_string: str):
     if intent == "CREATE_APPOINTMENT":
         json_str = first_line.split(";", 1)[1].strip() if ";" in first_line else ""
         if json_str:
+            # Extract the {...} object (safe even if model adds extra text)
+            match = re.search(r"\{.*\}", json_str)
+            if match:
+                json_str = match.group(0)
+
+            # Fix common invalid JSON
+            # Turns: "start_time":2026-...Z  -> "start_time":"2026-...Z"
+            json_str = re.sub(
+                r'("start_time"\s*:\s*)(\d{4}-\d{2}-\d{2}T[^",}\s]+Z)',
+                r'\1"\2"',
+                json_str
+            )
+            json_str = re.sub(
+                r'("end_time"\s*:\s*)(\d{4}-\d{2}-\d{2}T[^",}\s]+Z)',
+                r'\1"\2"',
+                json_str
+            )
+
             try:
                 result["params"] = json.loads(json_str)
             except json.JSONDecodeError:
-                match = re.search(r"\{.*\}", json_str)
-                if match:
-                    try:
-                        result["params"] = json.loads(match.group(0))
-                    except json.JSONDecodeError:
-                        pass
+                # If still broken, leave params empty (and let execution return a missing-info marker)
+                result["params"] = {}
         return result
 
     # ---- Read/Update/Delete ----
-    if intent in ("READ_APPOINTMENT_BY_ID", "UPDATE_APPOINTMENT", "DELETE_APPOINTMENT",
+    if intent in ("READ_APPOINTMENT", "UPDATE_APPOINTMENT", "DELETE_APPOINTMENT",
                   "DELETE_APPOINTMENT_ALL", "DELETE_LAST_APPOINTMENT", "READ_APPOINTMENT_ALL"):
+        #intents with no params
         if intent in ("DELETE_APPOINTMENT_ALL", "DELETE_LAST_APPOINTMENT", "READ_APPOINTMENT_ALL"):
             return result
-
+        # title
         if len(parts) >= 2:
-            ident = parts[1].strip().strip('"').strip("'")
-            if ident.isdigit():
-                result["params"]["id"] = int(ident)
-            else:
-                result["params"]["title"] = ident
-
-        if intent == "UPDATE_APPOINTMENT" and len(parts) >= 3:
+            title = parts[1].strip().strip('"').strip("'")
+            if title:
+                result["params"]["title"] = title
+        # update json
+        if intent == "UPDATE_APPOINTMENT" and len(raw_parts) >= 3:
             json_part = ";".join(parts[2:]).strip()
             match = re.search(r"\{.*\}", json_part)
             if match:
@@ -236,7 +252,6 @@ def parse_intent_response(intent_string: str):
                     pass
 
         return result
-
     return result
 
 
@@ -327,6 +342,8 @@ def execute_intent(parsed_intent, dialogue_state=None):
 
     # Appointments
     if intent == "CREATE_APPOINTMENT":
+        if not params.get("title") or not params.get("start_time"):
+            return "MISSING_FIELDS_CREATE_APPOINTMENT"
         result = calendercreate(
             teamid=1123,
             title=params.get("title", ""),
@@ -345,36 +362,34 @@ def execute_intent(parsed_intent, dialogue_state=None):
         result = calendergetall(1123)
         return result if result else "No appointments found"
 
-    if intent == "READ_APPOINTMENT_BY_ID":
-        appointment_id = params.get("id")
-        if not appointment_id:
-            return "No appointment ID specified"
-        result = calendergetbyid(appointment_id)
-        if result:
-            dialogue_state["last_appointment_id"] = appointment_id
-            dialogue_state["last_appointment_title"] = result.get("title")
-            return json.dumps(result, indent=2)
-        return "Appointment not found"
+    if intent == "READ_APPOINTMENT":
+        title = params.get("title") or dialogue_state.get("last_appointment_title")
+        if not title:
+            return "MISSING_TITLE_READ_APPOINTMENT"
+
+        ev = calendergetbytitle(1123, title)
+        if not ev:
+            return f'No appointment found with title "{title}"'
+
+        # keep state (optional)
+        dialogue_state["last_appointment_title"] = ev.get("title")
+        dialogue_state["last_appointment_id"] = ev.get("id") or ev.get("eventid")
+
+        return json.dumps(ev, indent=2)
 
     if intent == "UPDATE_APPOINTMENT":
-        appointment_id = params.get("id")
-        title = params.get("title")
+        lookup_title = params.get("title") or dialogue_state.get("last_appointment_title")
+        if not lookup_title:
+            return "MISSING_TITLE_UPDATE_APPOINTMENT"
 
-        if not appointment_id and title:
-            ev = calendergetbytitle(1123, title)
-            if not ev:
-                return f'No appointment found with title "{title}"'
-            appointment_id = ev.get("id") or ev.get("eventid")
+        ev = calendergetbytitle(1123, lookup_title)
+        if not ev:
+            return f'No appointment found with title "{lookup_title}"'
 
-        if not appointment_id:
-            return "No appointment ID or title specified"
+        resolved_id = ev.get("id") or ev.get("eventid")
+        ok = calenderupdate(resolved_id, params)
+        return f'Updated "{ev.get("title", lookup_title)}"' if ok else "Failed to update"
 
-        result = calenderupdate(appointment_id, params)
-        if result:
-            dialogue_state["last_appointment_id"] = appointment_id
-            dialogue_state["last_appointment_title"] = params.get("title") or dialogue_state.get("last_appointment_title")
-            return f"Appointment {appointment_id} updated"
-        return "Failed to update"
 
     if intent == "DELETE_APPOINTMENT_ALL":
         events = calendergetall(1123)
@@ -405,34 +420,38 @@ def execute_intent(parsed_intent, dialogue_state=None):
         return f"Deleted {deleted} appointments" if failed == 0 else f"Deleted {deleted} appointments, failed to delete {failed}"
 
     if intent == "DELETE_LAST_APPOINTMENT":
+        last_title = dialogue_state.get("last_appointment_title")
+        if last_title:
+            ev = calendergetbytitle(1123, last_title)
+            if ev:
+                resolved_id = ev.get("id") or ev.get("eventid")
+                if calenderdelete(resolved_id):
+                    return f'Deleted "{ev.get("title", last_title)}"'
+
+        # fallback to last_appointment_id
         last_id = dialogue_state.get("last_appointment_id")
         if last_id and calenderdelete(last_id):
-            return f"Deleted last appointment (id {last_id})"
-
+            return "Deleted your last appointment"
+        # final fallback :  get all
         events = calendergetall(1123)
         last_id = _pick_last_event_id(events)
         if not last_id:
             return "No appointments found to delete"
 
         ok = calenderdelete(last_id)
-        return f"Deleted last appointment (id {last_id})" if ok else "Failed to delete last appointment"
+        return f"Deleted last appointment" if ok else "Failed to delete last appointment"
 
     if intent == "DELETE_APPOINTMENT":
-        event_id = params.get("id") or dialogue_state.get("last_appointment_id")
         title = params.get("title") or dialogue_state.get("last_appointment_title")
+        if not title:
+            return "MISSING_TITLE_DELETE_APPOINTMENT"
 
-        if event_id:
-            ok = calenderdelete(event_id)
-            return f"Appointment {event_id} deleted" if ok else "Failed to delete"
+        ev = calendergetbytitle(1123, title)
+        if not ev:
+            return f'No appointment found with title "{title}"'
 
-        if title:
-            ev = calendergetbytitle(1123, title)
-            if not ev:
-                return f'No appointment found with title "{title}"'
-            resolved_id = ev.get("id") or ev.get("eventid")
-            ok = calenderdelete(resolved_id)
-            return f'Deleted "{ev.get("title", title)}" (id {resolved_id})' if ok else "Failed to delete"
-
-        return "No appointment ID or title specified"
+        resolved_id = ev.get("id") or ev.get("eventid")
+        ok = calenderdelete(resolved_id)
+        return f'Deleted "{ev.get("title", title)}"' if ok else "Failed to delete"
 
     return "Unknown intent"
