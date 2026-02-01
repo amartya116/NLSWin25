@@ -33,6 +33,22 @@ def extract_weekday_from_text(text: str) -> str | None:
             return d
     return None
 
+def extract_title_reply(text: str) -> str | None:
+    t = (text or "").strip()
+
+    # "call it Dentist", "name it Dentist", "title is Dentist", "it's Dentist"
+    m = re.search(r'(?i)\b(call it|name it|title is|it is|it\'s)\b\s+(.+)$', t)
+    if m:
+        title = m.group(2).strip().strip('"').strip("'")
+        return title if title else None
+
+    # If the assistant is explicitly waiting for a title, allow short replies as titles
+    # e.g. "Dentist", "Exam", "Team meeting"
+    title = t.strip().strip('"').strip("'")
+    if 1 <= len(title.split()) <= 6:
+        return title
+
+    return None
 
 def user_mentioned_place(text: str, place: str | None = None) -> bool:
     t = text or ""
@@ -104,6 +120,8 @@ Rules (Appointments):
   - UPDATE_APPOINTMENT;;{...}
   - DELETE_APPOINTMENT;
 -When UPDATING, you MUST also update description and MUST update dates/location if specified by the user.
+- IMPORTANT: Never invent a title.
+- If the user did not explicitly say a title/name, set "title" to "" (empty string).
 -for updating users might say update or change this event or appointment.
 - If the user does NOT mention a location, do NOT guess one. Leave it out.
 - Do NOT include explanations, ONLY output the intent line
@@ -243,7 +261,7 @@ def parse_intent_response(intent_string: str):
                 result["params"]["title"] = title
         # update json
         if intent == "UPDATE_APPOINTMENT" and len(raw_parts) >= 3:
-            json_part = ";".join(parts[2:]).strip()
+            json_part = ";".join(raw_parts[2:]).strip()
             match = re.search(r"\{.*\}", json_part)
             if match:
                 try:
@@ -258,6 +276,35 @@ def parse_intent_response(intent_string: str):
 def process_text_input(user_text: str, dialogue_state=None) -> str:
     if dialogue_state is None:
         dialogue_state = {}
+    # ---- Slot filling: if we are waiting for a title for CREATE_APPOINTMENT ----
+    if dialogue_state.get("pending_intent") == "CREATE_APPOINTMENT":
+        title = extract_title_reply(user_text)
+        if title:
+            pending = dialogue_state.get("pending_create", {}) or {}
+            merged_params = {"title": title, **pending}
+
+            # clear pending state
+            dialogue_state.pop("pending_intent", None)
+            dialogue_state.pop("pending_create", None)
+
+            parsed_intent = {"intent": "CREATE_APPOINTMENT", "params": merged_params}
+            response_text = execute_intent(parsed_intent, dialogue_state)
+
+            print(f"[NLU] Raw Intent: (slot-fill CREATE_APPOINTMENT)")
+            print(f"[NLU] Parsed Intent: {parsed_intent}")
+            print(f"[Execution] Response: {response_text}")
+
+            try:
+                conversations.insert_one({
+                    "query": user_text,
+                    "response": response_text,
+                    "timestamp": datetime.datetime.now()
+                })
+                print("[MongoDB] ✓ Saved to database")
+            except Exception as e:
+                print(f"[MongoDB] ✗ Failed to save: {e}")
+
+            return response_text
 
     intent_raw = nlu_parse(user_text, dialogue_state)
     print(f"[NLU] Raw Intent: {intent_raw}")
@@ -342,7 +389,18 @@ def execute_intent(parsed_intent, dialogue_state=None):
 
     # Appointments
     if intent == "CREATE_APPOINTMENT":
-        if not params.get("title") or not params.get("start_time"):
+        if not params.get("title"):
+            # store pending appointment details for next turn
+            dialogue_state["pending_intent"] = "CREATE_APPOINTMENT"
+            dialogue_state["pending_create"] = {
+                "description": params.get("description") or "",
+                "start_time": params.get("start_time") or "",
+                "end_time": params.get("end_time") or "",
+                "location": params.get("location") or "",
+            }
+            return "MISSING_TITLE_CREATE_APPOINTMENT"
+
+        if not params.get("start_time"):
             return "MISSING_FIELDS_CREATE_APPOINTMENT"
         result = calendercreate(
             teamid=1123,

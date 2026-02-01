@@ -132,8 +132,7 @@ async def speech_to_speech(audio: UploadFile = File(...)):
             nlg_result = await generate_nlg(nlg_input)
             response_text = nlg_result.text
             if nlg_result.follow_up_question:
-                response_text = f"{response_text}{nlg_result.follow_up_question}"
-            audio_path = run_tts(response_text)
+                response_text = f"{response_text} {nlg_result.follow_up_question}".strip()
             print(f"[NLG] Generated Response: {response_text}")
 
         except Exception as e:

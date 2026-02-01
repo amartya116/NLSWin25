@@ -5,7 +5,11 @@ import json
 import os
 import httpx
 
-DEFAULT_OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+DEFAULT_OLLAMA_URL = (
+    os.getenv("OLLAMA_URL")
+    or os.getenv("OLLAMA_HOST")
+    or "http://host.docker.internal:11434"
+)
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 
@@ -36,7 +40,12 @@ def _prompt_builder(nlg_input: Dict[str, Any]) -> str:
     - Convert the execution result into natural, conversational speech
     - Keep responses short (1-2 sentences) and speakable
     - If the result contains structured data (like weather forecasts), summarize it naturally
-    - If information is missing, ask ONE short follow-up question
+    - If execution_result is one of:
+      - MISSING_TITLE_CREATE_APPOINTMENT
+      - MISSING_TITLE_READ_APPOINTMENT
+      - MISSING_TITLE_UPDATE_APPOINTMENT
+      - MISSING_TITLE_DELETE_APPOINTMENT
+        ask ONE short follow_up_question requesting the appointment title.
     
     Execution Result:
     {execution_result}
@@ -78,7 +87,21 @@ def _fallback(nlg_input: Dict[str, Any]) -> NlgResult:
                 parts.append(f"Temperatures range from {mn} to {mx} degrees.")
             return NlgResult(text=" ".join(parts))
 
-    # Generic fallback
+    # Calendar fallback
+    execution_result = (nlg_input or {}).get("tool_results", {}).get("execution_result", "")
+
+    if execution_result == "MISSING_TITLE_CREATE_APPOINTMENT":
+        return NlgResult(text="Sure.", follow_up_question="What should I call the appointment?")
+    if execution_result == "MISSING_TITLE_READ_APPOINTMENT":
+        return NlgResult(text="Sure.", follow_up_question="What’s the appointment title?")
+    if execution_result == "MISSING_TITLE_UPDATE_APPOINTMENT":
+        return NlgResult(text="Okay.", follow_up_question="Which appointment title should I update?")
+    if execution_result == "MISSING_TITLE_DELETE_APPOINTMENT":
+        return NlgResult(text="Alright.", follow_up_question="Which appointment title should I delete?")
+
+    if isinstance(execution_result, str) and execution_result.strip():
+        return NlgResult(text=execution_result.strip())
+
     return NlgResult( text="Sorry, I couldn't generate a response right now. Please try again." )
 
 def parse_nlg_output(raw: str) -> NlgResult:
@@ -141,8 +164,11 @@ async def generate_nlg(
     }
 
     try:
+        endpoint = ollama_url.rstrip("/")
+        if not endpoint.endswith("/api/generate"):
+            endpoint += "/api/generate"
         async with httpx.AsyncClient(timeout=timeout_s) as client:
-            r = await client.post(ollama_url, json=body)
+            r = await client.post(endpoint, json=body)
             r.raise_for_status()
             data = r.json()
     except Exception as e:
@@ -156,10 +182,18 @@ async def generate_nlg(
             return _fallback(nlg_input)
         raise OllamaNlgError("Empty response from Ollama")
 
-    try:
-        return parse_nlg_output(raw)
-    except OllamaNlgError:
-        if fallback_on_error:
-            return _fallback(nlg_input)
-        raise
+    res = parse_nlg_output(raw)
+
+    execution_result = (nlg_input or {}).get("tool_results", {}).get("execution_result", "")
+    missing = {
+        "MISSING_TITLE_CREATE_APPOINTMENT",
+        "MISSING_TITLE_READ_APPOINTMENT",
+        "MISSING_TITLE_UPDATE_APPOINTMENT",
+        "MISSING_TITLE_DELETE_APPOINTMENT",
+    }
+    if execution_result in missing and not res.follow_up_question:
+        return _fallback(nlg_input)
+
+    return res
+
 
