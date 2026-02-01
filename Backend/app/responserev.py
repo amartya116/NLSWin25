@@ -44,22 +44,6 @@ def calendergetall(teamid):
         return None
 
 
-def calendergetbyid(eventid):
-    try:
-        url = f'https://api.responsible-nlp.net/calendar.php?calenderid={teamid}&id={eventid}'
-        headers = {
-            "Content-Type": "application/json",
-        }
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        return (response.json())
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
-        return None
-
-
 def _extract_events(payload):
     """Best-effort extraction of event list from API responses."""
     if payload is None:
@@ -107,29 +91,6 @@ def calendergetbytitle(teamid, title):
             continue
 
     return None
-
-
-def calenderupdate_by_title(teamid, lookup_title, title, description, start_time, end_time, location):
-    """Update an event by looking it up via its title."""
-    ev = calendergetbytitle(teamid, lookup_title)
-    if not ev:
-        return None
-    eventid = ev.get("id") or ev.get("eventid")
-    if eventid is None:
-        return None
-    return calenderupdate(eventid, title, description, start_time, end_time, location)
-
-
-def calenderdelete_by_title(teamid, lookup_title):
-    """Delete an event by looking it up via its title."""
-    ev = calendergetbytitle(teamid, lookup_title)
-    if not ev:
-        return None
-    eventid = ev.get("id") or ev.get("eventid")
-    if eventid is None:
-        return None
-    return calenderdelete(eventid)
-
 
 def calenderupdate(eventid, title, description, start_time, end_time, location):
     try:
